@@ -14,11 +14,13 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open the dev server URL (printed by `npm run dev`) in your browser to see the result.
 
 You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+When deploying, configure the backend base URL as `NEXT_PUBLIC_API_BASE` in Vercel environment variables. For local development, create a `.env.local` (copy from `.env.local.example`) and set `NEXT_PUBLIC_API_BASE=http://localhost:5000` if your backend runs on that address.
 
 ## Learn More
 
