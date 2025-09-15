@@ -1,14 +1,26 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../../lib/api';
 
 export default function BidModal({ tenderId }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [bidAmount, setBidAmount] = useState('');
-  const [bidderName, setBidderName] = useState('Test User');
+  const [bidderName, setBidderName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
+
+  useEffect(() => {
+    // Pre-fill bidder name from current user if available
+    try {
+      const raw = localStorage.getItem('currentUser');
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u?.name) setBidderName(u.name);
+      }
+    } catch (_) {}
+    if (!bidderName) setBidderName('Test IT User');
+  }, []);
 
   const openModal = () => { setOpen(true); setStep(1); setMessage(null); };
   const closeModal = () => setOpen(false);

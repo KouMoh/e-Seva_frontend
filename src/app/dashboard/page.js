@@ -4,6 +4,7 @@ import ProfileCard from '../../components/dashboard/ProfileCard';
 import RecentActivity from '../../components/dashboard/RecentActivity';
 import api from '../../lib/api';
 import DateDisplay from '../../components/common/DateDisplay';
+import DashboardStats from '../../components/dashboard/DashboardStats';
 
 export default async function DashboardPage() {
   let tenders = [];
@@ -78,12 +79,7 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold">Welcome, {user.name}!</h1>
       </header>
 
-      <section className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard title="Recommended Tenders" value={recommended} />
-        <StatCard title="Active Bids" value={activeBids} />
-        <StatCard title="Upcoming Deadlines" value={upcomingDeadlines} />
-        <StatCard title="Tenders Won" value={tendersWon} />
-      </section>
+      <DashboardStats user={user} initialTenders={tenders} initialMyBids={myBids} />
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
