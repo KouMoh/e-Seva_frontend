@@ -9,7 +9,7 @@ export default function Hero() {
           <p className="mt-4 text-lg opacity-90">Find matching tenders, apply faster and win more contracts with guided forms and smart alerts.</p>
           <div className="mt-6 flex gap-3">
             <Link href="/register" className="bg-white text-blue-600 px-4 py-2 rounded font-semibold">Get Started</Link>
-            <Link href="/tenders" className="border border-white/30 px-4 py-2 rounded">Browse Tenders</Link>
+            <Link href="/browse-tenders" className="border border-white/30 px-4 py-2 rounded">Browse Tenders</Link>
           </div>
         </div>
         <div className="flex-1">

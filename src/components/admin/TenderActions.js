@@ -1,25 +1,30 @@
 "use client";
 import React, { useState } from 'react';
-import api from '../../lib/api';
+import { useSession } from 'next-auth/react';
+import { authenticatedApiCall } from '../../lib/api';
 
 export default function TenderActions({ tenderId, onDeleted, tender }) {
+  const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
 
   const handleDelete = async () => {
+    if (!session?.accessToken) {
+      alert('Authentication required');
+      return;
+    }
+
     if (!confirm('Delete this tender?')) return;
     setLoading(true);
     try {
-      const res = await fetch(api(`/api/tenders/${tenderId}`), { method: 'DELETE' });
-      if (res.ok) {
-        alert('Deleted');
-        onDeleted && onDeleted(tenderId);
-      } else {
-        const err = await res.json();
-        alert(err?.message || 'Failed to delete');
-      }
-    } catch (e) {
-      alert('Network error');
-    } finally { setLoading(false); }
+      await authenticatedApiCall(`tenders/${tenderId}`, { method: 'DELETE' }, session.accessToken);
+      alert('Deleted');
+      onDeleted && onDeleted(tenderId);
+    } catch (error) {
+      console.error('Failed to delete tender:', error);
+      alert(error.message || 'Failed to delete tender');
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   // if tender is awarded, disable edit/delete

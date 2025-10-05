@@ -1,15 +1,51 @@
 "use client";
 import React from 'react';
-import api from '../../../lib/api';
+import { useSession } from 'next-auth/react';
+import { authenticatedApiCall } from '../../../lib/api';
 import { useEffect, useState } from 'react';
 import BidActions from '../../../components/admin/BidActions';
 
 export default function AdminBidsPage() {
+  const { data: session } = useSession();
   const [bids, setBids] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(api('/api/bids')).then(r => r.json()).then(setBids).catch(() => setBids([]));
-  }, []);
+    if (!session?.accessToken) return;
+
+    const fetchBids = async () => {
+      try {
+        const bidsData = await authenticatedApiCall('bids', { method: 'GET' }, session.accessToken);
+        // Sort bids newest-first by updatedAt, falling back to createdAt if needed
+        const sorted = Array.isArray(bidsData)
+          ? bidsData.slice().sort((a, b) => {
+              const aDate = new Date(a.updatedAt || a.createdAt || 0).getTime();
+              const bDate = new Date(b.updatedAt || b.createdAt || 0).getTime();
+              return bDate - aDate;
+            })
+          : bidsData;
+        setBids(sorted);
+      } catch (error) {
+        console.error('Failed to fetch bids:', error);
+        setBids([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBids();
+  }, [session?.accessToken]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading bids...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

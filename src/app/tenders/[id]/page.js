@@ -1,22 +1,49 @@
+"use client";
+import { useEffect, useState, use } from 'react';
+import { useSession } from 'next-auth/react';
+import { authenticatedApiCall } from '../../../lib/api';
 import TenderCard from '../../../components/tenders/TenderCard';
-import api from '../../../lib/api';
 import BidModal from '../../../components/bids/BidModal';
 import DateDisplay from '../../../components/common/DateDisplay';
 
-export default async function TenderDetails({ params }) {
-  const { id } = params;
-  let tender = null;
-  try {
-  const res = await fetch(api(`/api/tenders/${id}`), { cache: 'no-store' });
-    if (res.ok) tender = await res.json();
-  } catch (err) {
-    tender = null;
+export default function TenderDetails({ params }) {
+  const { data: session } = useSession();
+  const resolvedParams = use(params);
+  const { id } = resolvedParams;
+  const [tender, setTender] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchTender = async () => {
+      try {
+        const tenderData = await authenticatedApiCall(`tenders/${id}`, { method: 'GET' }, session?.accessToken);
+        setTender(tenderData);
+      } catch (error) {
+        console.error('Failed to fetch tender:', error);
+        setTender(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTender();
+  }, [id, session?.accessToken]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading tender details...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="p-6">
       {!tender ? (
-        <div className="p-4 bg-white rounded">Tender not found or backend unreachable.</div>
+        <div className="p-4 bg-white rounded">Tender not found.</div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <main className="lg:col-span-2">

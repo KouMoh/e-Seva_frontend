@@ -1,71 +1,88 @@
 "use client";
 import { useEffect, useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import StatCard from './StatCard';
-import api from '../../lib/api';
+import { authenticatedApiCall } from '../../lib/api';
+import { recommendTenders } from '../../lib/recommendationEngine';
 
-export default function DashboardStats({ user, initialTenders = [], initialMyBids = [] }) {
+export default function DashboardStats({ user, initialTenders = [], initialMyBids = [], userProfile = null }) {
+  const { data: session } = useSession();
   const [tenders, setTenders] = useState(initialTenders);
   const [myBids, setMyBids] = useState(initialMyBids);
 
-  // Periodically refresh to keep stats timely
+  // Periodically refresh to keep stats timely. Polling is enabled by
+  // setting NEXT_PUBLIC_POLL_INTERVAL (ms). If not set, default to 5000ms
+  // in development, but disable by default in production to avoid
+  // unnecessary load after deployment.
   useEffect(() => {
+    if (!session?.accessToken) return;
+
+    const envInterval = typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_POLL_INTERVAL;
+    const intervalMs = envInterval ? parseInt(envInterval, 10) : (process.env.NODE_ENV === 'development' ? 5000 : 0);
+
     let alive = true;
     const refresh = async () => {
       try {
-        const [tRes, bRes] = await Promise.all([
-          fetch(api('/api/tenders'), { cache: 'no-store' }),
-          fetch(api(`/api/bids/my-bids?bidder=${encodeURIComponent(user.name)}`), { cache: 'no-store' })
+        const [tendersData, bidsData] = await Promise.all([
+          authenticatedApiCall('tenders', { method: 'GET' }, session.accessToken),
+          authenticatedApiCall('bids/my-bids', { method: 'GET' }, session.accessToken)
         ]);
         if (!alive) return;
-        if (tRes.ok) setTenders(await tRes.json());
-        if (bRes.ok) setMyBids(await bRes.json());
-      } catch (_) {}
+        setTenders(tendersData);
+        setMyBids(bidsData);
+      } catch (error) {
+        console.error('Failed to refresh dashboard stats:', error);
+      }
     };
+
+    // Always do an initial refresh when the component mounts and session is available
     refresh();
-    const id = setInterval(refresh, 5000);
+
+    let id = null;
     const onVis = () => { if (!document.hidden) refresh(); };
-    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
-    return () => { alive = false; clearInterval(id); };
-  }, [user?.name]);
+
+    if (intervalMs > 0) {
+      id = setInterval(refresh, intervalMs);
+      if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    } else {
+      // Polling disabled (likely production). We still refresh on visibility changes
+      if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    }
+
+    return () => {
+      alive = false;
+      if (id) clearInterval(id);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [session?.accessToken]);
 
   const { recommended, upcomingDeadlines, activeBids, tendersWon } = useMemo(() => {
-    const normalize = (s) => (s || '').toLowerCase();
-    const extractKeywords = (text) => {
-      const base = normalize(text);
-      const words = base.split(/[^a-z0-9]+/).filter(Boolean);
-      const stop = new Set(['the','and','for','with','of','to','in','on','a','an','we','our','services','service','solution','solutions','pvt','ltd','private','limited','company','client','clients','across']);
-      const stems = words
-        .filter(w => (w.length > 2 || w === 'it') && !stop.has(w))
-        .map(w => w.replace(/(ing|ed|es|s)$/,'').slice(0,24));
-      return Array.from(new Set(stems));
+    if (!user || !tenders.length) {
+      return { recommended: 0, activeBids: 0, upcomingDeadlines: 0, tendersWon: 0 };
+    }
+
+    // Use advanced recommendation engine with full profile data
+    const companyProfile = userProfile || {
+      name: user.name,
+      company: user.company,
+      description: user.description,
+      location: user.location,
+      role: user.role
     };
-    const tokenizeTender = (t) => {
-      const base = normalize(`${t?.title || ''} ${t?.description || ''} ${t?.category || ''}`);
-      const words = base.split(/[^a-z0-9]+/).filter(Boolean);
-      const stems = words.map(w => w.replace(/(ing|ed|es|s)$/,'').slice(0,24));
-      return new Set(stems);
-    };
-    const companyKeywords = extractKeywords(user?.description || `${user?.company || ''} ${user?.name || ''}`);
-    const priority = new Set(['it','infrastructur','software','cloud','web','maintenanc','develop']);
-    const domainKeywords = new Set(['it','infrastructur','software','cloud','web','maintenanc','develop','system','network','security','devops','database','applic','portal','site','digit','data','support']);
-    const isRecommended = (t) => {
-      if (!t || t.status === 'awarded') return false;
-      const tenderTokens = tokenizeTender(t);
-      let overlap = 0;
-      for (const k of companyKeywords) {
-        if (tenderTokens.has(k)) overlap++;
-      }
-      const hasPriority = Array.from(priority).some(p => tenderTokens.has(p) && (companyKeywords.includes ? companyKeywords.includes(p) : companyKeywords.indexOf(p) !== -1));
-      const matchesDomain = Array.from(domainKeywords).some(p => tenderTokens.has(p));
-      return matchesDomain && (overlap >= 1 || hasPriority);
-    };
-    const recommendedList = (tenders || []).filter(isRecommended);
+    
+    const recommendedList = recommendTenders(tenders, companyProfile);
     const active = (myBids || []).filter(b => !['rejected','granted'].includes((b.status || '').toLowerCase())).length;
     const deadlines = (tenders || []).filter(t => new Date(t.submissionDeadline) > new Date()).length;
-    // Count total number of granted/awarded tenders from the backend data source
-    const won = (tenders || []).filter(t => (t.status || '').toLowerCase() === 'awarded').length;
-    return { recommended: recommendedList.length, activeBids: active, upcomingDeadlines: deadlines, tendersWon: won };
-  }, [tenders, myBids, user]);
+    // Count tenders won by this specific user
+    const won = (myBids || []).filter(b => (b.status || '').toLowerCase() === 'granted').length;
+    
+    return { 
+      recommended: recommendedList.length, 
+      activeBids: active, 
+      upcomingDeadlines: deadlines, 
+      tendersWon: won 
+    };
+  }, [tenders, myBids, user, userProfile]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-8">

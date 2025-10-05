@@ -1,25 +1,33 @@
 "use client";
 import React, { useState } from 'react';
-import api from '../../lib/api';
+import { useSession } from 'next-auth/react';
+import { authenticatedApiCall } from '../../lib/api';
 
 export default function BidActions({ bid }) {
+  const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
 
   const updateStatus = async (status) => {
+    if (!session?.accessToken) {
+      alert('Authentication required');
+      return;
+    }
+
     if (!confirm(`Set status to ${status}?`)) return;
     setLoading(true);
     try {
-      const res = await fetch(api(`/api/bids/${bid._id}/status`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
-      if (res.ok) {
-        alert('Status updated');
-        location.reload();
-      } else {
-        const err = await res.json();
-        alert(err?.message || 'Failed');
-      }
-    } catch (e) {
-      alert('Network error');
-    } finally { setLoading(false); }
+      await authenticatedApiCall(`bids/${bid._id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status })
+      }, session.accessToken);
+      alert('Status updated');
+      location.reload();
+    } catch (error) {
+      console.error('Failed to update bid status:', error);
+      alert(error.message || 'Failed to update status');
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   return (

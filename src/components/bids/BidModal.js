@@ -1,26 +1,15 @@
 'use client';
 import { useEffect, useState } from 'react';
-import api from '../../lib/api';
+import { useSession } from 'next-auth/react';
+import { authenticatedApiCall } from '../../lib/api';
 
 export default function BidModal({ tenderId }) {
+  const { data: session } = useSession();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [bidAmount, setBidAmount] = useState('');
-  const [bidderName, setBidderName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
-
-  useEffect(() => {
-    // Pre-fill bidder name from current user if available
-    try {
-      const raw = localStorage.getItem('currentUser');
-      if (raw) {
-        const u = JSON.parse(raw);
-        if (u?.name) setBidderName(u.name);
-      }
-    } catch (_) {}
-    if (!bidderName) setBidderName('Test IT User');
-  }, []);
 
   const openModal = () => { setOpen(true); setStep(1); setMessage(null); };
   const closeModal = () => setOpen(false);
@@ -29,22 +18,22 @@ export default function BidModal({ tenderId }) {
   const back = () => setStep(s => Math.max(1, s - 1));
 
   const submit = async () => {
+    if (!session?.accessToken) {
+      setMessage('Authentication required');
+      return;
+    }
+
     setSubmitting(true);
     setMessage(null);
     try {
-  const res = await fetch(api(`/api/bids/${tenderId}`), {
+      await authenticatedApiCall(`bids/${tenderId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bidderName, bidAmount: Number(bidAmount), documents: [] }),
-      });
-      if (res.ok) {
-        setMessage('Bid submitted successfully');
-      } else {
-        const err = await res.json();
-        setMessage(err?.message || 'Failed to submit bid');
-      }
-    } catch (e) {
-      setMessage('Network error submitting bid');
+        body: JSON.stringify({ bidAmount: Number(bidAmount), documents: [] }),
+      }, session.accessToken);
+      setMessage('Bid submitted successfully');
+    } catch (error) {
+      console.error('Failed to submit bid:', error);
+      setMessage(error.message || 'Failed to submit bid');
     } finally {
       setSubmitting(false);
     }
@@ -66,10 +55,7 @@ export default function BidModal({ tenderId }) {
 
             {step === 1 && (
               <div>
-                <label className="block text-sm font-medium">Your Name</label>
-                <input className="border p-2 w-full mt-1" value={bidderName} onChange={e => setBidderName(e.target.value)} />
-
-                <label className="block text-sm font-medium mt-3">Bid Amount (INR)</label>
+                <label className="block text-sm font-medium">Bid Amount (INR)</label>
                 <input type="number" className="border p-2 w-full mt-1" value={bidAmount} onChange={e => setBidAmount(e.target.value)} />
 
                 <div className="mt-4 flex justify-end gap-2">

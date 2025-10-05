@@ -1,16 +1,26 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import api from '../../../lib/api';
+import { useSession } from 'next-auth/react';
+import { authenticatedApiCall } from '../../../lib/api';
 import TenderActions from '../../../components/admin/TenderActions';
 
 export default function AdminTendersPage() {
+  const { data: session } = useSession();
   const [tenders, setTenders] = useState([]);
 
   // Refetch tenders
-  const fetchTenders = useCallback(() => {
-    fetch(api('/api/tenders')).then(r => r.json()).then(setTenders).catch(() => setTenders([]));
-  }, []);
+  const fetchTenders = useCallback(async () => {
+    if (!session?.accessToken) return;
+    
+    try {
+      const tendersData = await authenticatedApiCall('tenders', { method: 'GET' }, session.accessToken);
+      setTenders(tendersData);
+    } catch (error) {
+      console.error('Failed to fetch tenders:', error);
+      setTenders([]);
+    }
+  }, [session?.accessToken]);
 
   useEffect(() => {
     fetchTenders();
@@ -31,7 +41,7 @@ export default function AdminTendersPage() {
           <div key={t._id} className="p-4 border rounded flex justify-between items-center">
             <div>
               <h2 className="font-semibold">{t.title}</h2>
-              <p className="text-sm text-gray-600">ID: {t.tenderId}  {t.location}</p>
+              <p className="text-sm text-gray-600">ID: {t.tenderId}  {t.location}</p>
             </div>
             <div className="flex gap-2">
               <TenderActions tender={t} tenderId={t._id} onDeleted={(id) => setTenders(prev => prev.filter(x => x._id !== id))} />

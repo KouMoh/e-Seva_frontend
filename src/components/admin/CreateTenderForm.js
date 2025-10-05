@@ -1,8 +1,10 @@
 "use client";
 import React, { useState } from 'react';
-import api from '../../lib/api';
+import { useSession } from 'next-auth/react';
+import { authenticatedApiCall } from '../../lib/api';
 
 export default function CreateTenderForm({ onCreated }) {
+  const { data: session } = useSession();
   const [title, setTitle] = useState('');
   const [tenderId, setTenderId] = useState('');
   const [location, setLocation] = useState('');
@@ -15,6 +17,11 @@ export default function CreateTenderForm({ onCreated }) {
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
+    if (!session?.accessToken) {
+      alert('Authentication required');
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (!title?.trim() || !tenderId?.trim()) {
@@ -33,18 +40,20 @@ export default function CreateTenderForm({ onCreated }) {
         submissionDeadline: submissionDeadline || undefined,
         status: status || undefined,
       };
-      const res = await fetch(api('/api/tenders'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (res.ok) {
-        const t = await res.json();
-        alert('Created');
-        onCreated && onCreated(t);
-      } else {
-        const err = await res.json();
-        alert(err?.message || 'Failed');
-      }
-    } catch (e) {
-      alert('Network error');
-    } finally { setSubmitting(false); }
+      
+      const tender = await authenticatedApiCall('tenders', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }, session.accessToken);
+      
+      alert('Created');
+      onCreated && onCreated(tender);
+    } catch (error) {
+      console.error('Failed to create tender:', error);
+      alert(error.message || 'Failed to create tender');
+    } finally { 
+      setSubmitting(false); 
+    }
   };
 
   return (

@@ -1,11 +1,12 @@
 "use client";
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-
+import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 
 export default function Sidebar({ role = 'company' }) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -23,10 +24,12 @@ export default function Sidebar({ role = 'company' }) {
     };
   }, []);
 
-  const logout = () => {
-    try { localStorage.removeItem('currentUser'); } catch(e){}
-    router.push('/');
+  const logout = async () => {
+    await signOut({ callbackUrl: '/' });
   };
+
+  // Use session role if available, otherwise fallback to prop
+  const userRole = session?.user?.role || role;
 
   // Width-collapsing sidebar; mobile defaults to collapsed and uses overlay when open
   return (
@@ -48,7 +51,7 @@ export default function Sidebar({ role = 'company' }) {
         {!collapsed && <span className="font-bold">E-Suvidha</span>}
       </div>
       <nav className={`flex flex-col gap-2 text-sm text-gray-700`}>
-        {role === 'admin' ? (
+        {userRole === 'admin' ? (
           <>
             <Link href="/admin/dashboard" className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100">
               <span className="w-2 h-2 bg-gray-400 rounded-full" />
@@ -94,6 +97,13 @@ export default function Sidebar({ role = 'company' }) {
               <span className={`${collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-opacity duration-200`}>Profile</span>
             </Link>
           </>
+        )}
+        {session && !collapsed && (
+          <div className="mt-4 p-2 bg-gray-50 rounded">
+            <p className="text-xs font-medium text-gray-900">{session.user.name}</p>
+            <p className="text-xs text-gray-600">{session.user.email}</p>
+            <p className="text-xs text-blue-600 capitalize">{session.user.role}</p>
+          </div>
         )}
         <button
           onClick={logout}

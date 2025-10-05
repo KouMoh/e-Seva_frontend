@@ -1,77 +1,104 @@
+"use client";
+import { useEffect, useState, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import StatCard from '../../components/dashboard/StatCard';
 import TenderCard from '../../components/tenders/TenderCard';
 import ProfileCard from '../../components/dashboard/ProfileCard';
 import RecentActivity from '../../components/dashboard/RecentActivity';
-import api from '../../lib/api';
 import DateDisplay from '../../components/common/DateDisplay';
 import DashboardStats from '../../components/dashboard/DashboardStats';
+import { authenticatedApiCall } from '../../lib/api';
+import { recommendTenders, getRecommendationExplanation } from '../../lib/recommendationEngine';
 
-export default async function DashboardPage() {
-  let tenders = [];
-  try {
-  const res = await fetch(api('/api/tenders'), { cache: 'no-store' });
-    if (res.ok) tenders = await res.json();
-  } catch (err) {
-    tenders = [];
-  }
+export default function DashboardPage() {
+  const { data: session } = useSession();
+  const [tenders, setTenders] = useState([]);
+  const [myBids, setMyBids] = useState([]);
+  const [userProfile, setUserProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Fetch or seed the test IT company user from backend
-  let user = { name: 'Test IT User', company: 'TechNova IT Pvt. Ltd.', location: 'Bengaluru' };
-  try {
-    const ures = await fetch(api('/api/users/test-company'), { cache: 'no-store' });
-    if (ures.ok) user = await ures.json();
-  } catch (e) {}
+  const user = session?.user || { name: 'User', company: 'Company', location: 'Location' };
 
-  // fetch this user's bids (by name) and compute stats
-  let myBids = [];
-  try {
-    const bres = await fetch(api(`/api/bids/my-bids?bidder=${encodeURIComponent(user.name)}`), { cache: 'no-store' });
-    if (bres.ok) myBids = await bres.json();
-  } catch (e) { myBids = []; }
+  useEffect(() => {
+    if (!session?.accessToken) return;
 
-  // Compute recommended tender count based on company description keyword matching
-  const normalize = (s) => (s || '').toLowerCase();
-  const extractKeywords = (text) => {
-    const base = normalize(text);
-    const words = base.split(/[^a-z0-9]+/).filter(Boolean);
-    const stop = new Set(['the','and','for','with','of','to','in','on','a','an','we','our','services','service','solution','solutions','pvt','ltd','private','limited','company','client','clients','across']);
-    const stems = words
-      .filter(w => (w.length > 2 || w === 'it') && !stop.has(w))
-      .map(w => w.replace(/(ing|ed|es|s)$/,'').slice(0,24));
-    return Array.from(new Set(stems));
-  };
-  const tokenizeTender = (t) => {
-    const base = normalize(`${t?.title || ''} ${t?.description || ''} ${t?.category || ''}`);
-    const words = base.split(/[^a-z0-9]+/).filter(Boolean);
-    const stems = words.map(w => w.replace(/(ing|ed|es|s)$/,'').slice(0,24));
-    return new Set(stems);
-  };
-  const companyKeywords = extractKeywords(user.description || `${user.company} ${user.name}`);
-  const priority = new Set(['it','infrastructur','software','cloud','web','maintenanc','develop']);
-  const domainKeywords = new Set(['it','infrastructur','software','cloud','web','maintenanc','develop','system','network','security','devops','database','applic','portal','site','digit','data','support']);
-  const isRecommended = (t) => {
-    if (!t || t.status === 'awarded') return false;
-    const tenderTokens = tokenizeTender(t);
-    let overlap = 0;
-    for (const k of companyKeywords) {
-      if (tenderTokens.has(k)) overlap++;
+    const fetchData = async () => {
+      try {
+        const [tendersData, bidsData, profileData] = await Promise.all([
+          authenticatedApiCall('tenders', { method: 'GET' }, session.accessToken),
+          authenticatedApiCall('bids/my-bids', { method: 'GET' }, session.accessToken),
+          authenticatedApiCall('auth/profile', { method: 'GET' }, session.accessToken)
+        ]);
+        setTenders(tendersData);
+        setMyBids(bidsData);
+        setUserProfile(profileData);
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [session?.accessToken]);
+
+  // Use advanced recommendation engine with full profile data
+  const recommendedList = useMemo(() => {
+    if (!tenders.length) return [];
+    
+    // Use detailed profile data if available, otherwise fallback to session data
+    const companyProfile = userProfile || {
+      name: user.name,
+      company: user.company,
+      description: user.description,
+      location: user.location,
+      role: user.role
+    };
+    
+    return recommendTenders(tenders, companyProfile);
+  }, [tenders, userProfile, user]);
+
+  // Generate user-specific activities based on their bids and profile
+  const activities = useMemo(() => {
+    const userActivities = [];
+    
+    // Add activities based on user's bids
+    if (myBids && myBids.length > 0) {
+      const recentBids = myBids
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 2);
+      
+      recentBids.forEach(bid => {
+        if (bid.tender) {
+          userActivities.push({
+            text: `Submitted bid for ${bid.tender.title}`,
+            time: new Date(bid.createdAt).toLocaleDateString()
+          });
+        }
+      });
     }
-    const hasPriority = Array.from(priority).some(p => tenderTokens.has(p) && (companyKeywords.includes ? companyKeywords.includes(p) : companyKeywords.indexOf(p) !== -1));
-    const matchesDomain = Array.from(domainKeywords).some(p => tenderTokens.has(p));
-    // Require at least one IT domain token AND (overlap>=1 or shared priority)
-    return matchesDomain && (overlap >= 1 || hasPriority);
-  };
-  const recommendedList = tenders.filter(isRecommended);
-  const recommended = recommendedList.length;
-  // active bids: submitted or under-review (not rejected or granted)
-  const activeBids = myBids.filter(b => !['rejected','granted'].includes(b.status)).length;
-  const upcomingDeadlines = tenders.filter(t => new Date(t.submissionDeadline) > new Date()).length;
-  const tendersWon = myBids.filter(b => b.status === 'granted').length || tenders.filter(t => t.status === 'awarded' && t.winnerName === user.name).length;
+    
+    // Add default activities if no bids
+    if (userActivities.length === 0) {
+      userActivities.push(
+        { text: `Welcome to E-Suvidha, ${user.name}!`, time: 'Today' },
+        { text: `Start browsing tenders in your category`, time: 'Now' }
+      );
+    }
+    
+    return userActivities;
+  }, [myBids, user.name]);
 
-  const activities = [
-    { text: 'Submitted bid for IT Maintenance', time: '2 days ago' },
-    { text: 'Viewed tender: Supply of Stationery', time: '5 days ago' },
-  ];
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -79,7 +106,7 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold">Welcome, {user.name}!</h1>
       </header>
 
-      <DashboardStats user={user} initialTenders={tenders} initialMyBids={myBids} />
+      <DashboardStats user={user} initialTenders={tenders} initialMyBids={myBids} userProfile={userProfile} />
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
@@ -88,7 +115,7 @@ export default async function DashboardPage() {
         {recommendedList.length === 0 ? (
               <div className="p-4 bg-white rounded">No tenders available.</div>
             ) : (
-          recommendedList.map(t => <TenderCard key={t._id} tender={t} DateDisplay={DateDisplay} />)
+          recommendedList.map(t => <TenderCard key={t._id} tender={t} DateDisplay={DateDisplay} showRecommendation={true} />)
             )}
           </div>
         </div>

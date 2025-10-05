@@ -1,20 +1,48 @@
+"use client";
+import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import StatCard from '../../../components/dashboard/StatCard';
-import api from '../../../lib/api';
+import { authenticatedApiCall } from '../../../lib/api';
 import DateDisplay from '../../../components/common/DateDisplay';
 import TenderCard from '../../../components/tenders/TenderCard';
 
-export default async function AdminDashboard() {
-  let tenders = [];
-  try {
-    const res = await fetch(api('/api/tenders'), { cache: 'no-store' });
-    if (res.ok) tenders = await res.json();
-  } catch (e) { tenders = []; }
+export default function AdminDashboard() {
+  const { data: session } = useSession();
+  const [tenders, setTenders] = useState([]);
+  const [bids, setBids] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  let bids = [];
-  try {
-    const bres = await fetch(api('/api/bids'), { cache: 'no-store' });
-    if (bres.ok) bids = await bres.json();
-  } catch (e) { bids = []; }
+  useEffect(() => {
+    if (!session?.accessToken) return;
+
+    const fetchData = async () => {
+      try {
+        const [tendersData, bidsData] = await Promise.all([
+          authenticatedApiCall('tenders', { method: 'GET' }, session.accessToken),
+          authenticatedApiCall('bids', { method: 'GET' }, session.accessToken)
+        ]);
+        setTenders(tendersData);
+        setBids(bidsData);
+      } catch (error) {
+        console.error('Failed to fetch admin dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [session?.accessToken]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading admin dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   const totalUsers = 42; // placeholder
   const totalTenders = tenders.length;
@@ -33,7 +61,7 @@ export default async function AdminDashboard() {
         <h2 className="text-xl font-semibold mb-3">Recent Tenders</h2>
         <div className="grid gap-4">
           {tenders.filter(t => t.status !== 'awarded').slice(0,5).map(t => (
-            <TenderCard key={t._id} tender={t} DateDisplay={DateDisplay} />
+            <TenderCard key={t._id} tender={t} DateDisplay={DateDisplay} userRole="admin" />
           ))}
         </div>
       </section>

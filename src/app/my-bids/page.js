@@ -1,19 +1,44 @@
 "use client";
 import React, { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import TenderCard from '../../components/tenders/TenderCard';
-import api from '../../lib/api';
+import { authenticatedApiCall } from '../../lib/api';
 import NotificationList from '../../components/notifications/NotificationList';
 import DateDisplay from '../../components/common/DateDisplay';
 
-const TEST_USER_NAME = 'Test User';
-
-
 export default function MyBidsPage() {
+  const { data: session } = useSession();
   const [bids, setBids] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(api(`/api/bids/my-bids?bidder=${encodeURIComponent(TEST_USER_NAME)}`)).then(r => r.json()).then(setBids).catch(() => setBids([]));
-  }, []);
+    if (!session?.accessToken) return;
+
+    const fetchBids = async () => {
+      try {
+        const bidsData = await authenticatedApiCall('bids/my-bids', { method: 'GET' }, session.accessToken);
+        setBids(bidsData);
+      } catch (error) {
+        console.error('Failed to fetch bids:', error);
+        setBids([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBids();
+  }, [session?.accessToken]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your bids...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <main className="p-6">
@@ -43,7 +68,7 @@ export default function MyBidsPage() {
       </section>
 
       <aside>
-        <NotificationList recipient={TEST_USER_NAME} />
+        <NotificationList recipient={session?.user?.name || 'User'} />
       </aside>
       </div>
     </main>

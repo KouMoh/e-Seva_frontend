@@ -1,17 +1,27 @@
 "use client";
 import React, { useEffect, useState } from 'react';
-import api from '../../lib/api';
+import { useSession } from 'next-auth/react';
+import { authenticatedApiCall } from '../../lib/api';
 
 export default function NotificationList({ recipient }) {
+  const { data: session } = useSession();
   const [notes, setNotes] = useState([]);
 
   useEffect(() => {
-    if (!recipient) return;
-    fetch(api(`/api/notifications?recipient=${encodeURIComponent(recipient)}`))
-      .then(r => r.json())
-      .then(setNotes)
-      .catch(() => setNotes([]));
-  }, [recipient]);
+    if (!recipient || !session?.accessToken) return;
+    
+    const fetchNotifications = async () => {
+      try {
+        const notificationsData = await authenticatedApiCall(`notifications?recipient=${encodeURIComponent(recipient)}`, { method: 'GET' }, session.accessToken);
+        setNotes(notificationsData);
+      } catch (error) {
+        console.error('Failed to fetch notifications:', error);
+        setNotes([]);
+      }
+    };
+
+    fetchNotifications();
+  }, [recipient, session?.accessToken]);
 
   if (!recipient) return null;
 
