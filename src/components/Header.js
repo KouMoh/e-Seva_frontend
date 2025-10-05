@@ -9,7 +9,6 @@ export default function Header() {
           <nav className="hidden sm:flex gap-4 text-sm text-gray-600">
             <Link href="/">Home</Link>
             <Link href="/about">About</Link>
-            <Link href="/tenders">Tenders</Link>
           </nav>
         </div>
         <div className="flex items-center gap-3">
